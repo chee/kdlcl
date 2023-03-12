@@ -72,8 +72,15 @@
 
 
 (defun run-test-cases ()
-  (print (loop
-           for test-result
-           in (collect-test-cases)
-           collect (print-result test-result)))
-  (fresh-line))
+  (let ((results
+          (loop
+            for test-result
+            in (collect-test-cases)
+            collect (print-result test-result))))
+    (fresh-line)
+    (princ (substitute "✅" t (substitute "❌" nil results)))
+    (fresh-line)
+    (format t "PASS: ~a~%SORRY: ~a~%TOTAL: ~a~%"
+      (count t results)
+      (count-if 'null results)
+      (length results))))
