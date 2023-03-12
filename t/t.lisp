@@ -18,18 +18,13 @@
                       (succeedp (probe-file expectation-path))
                       (expected
                         (when succeedp
-                          (uiop:read-file-string expectation-path))))
+                          (uiop:read-file-string expectation-path)))
+                      (actual (handler-case
+                                (kdl:to-string (kdl:from-file test-file))
+                                (error nil))))
                 (if succeedp
-                  (lambda ()
-                    (list test-name #'string=
-                      (kdl:to-string (kdl:from-file test-file))
-                      expected))
-                  (lambda ()
-                    (list test-name #'null
-                      (handler-case
-                        (kdl:to-string (kdl:from-file test-file))
-                        (error nil)))))))))
-
+                  (list test-name #'string= actual expected)
+                  (list test-name #'null actual nil))))))
 
 
 (defun print-colourfully (text &optional (colour :black) (style 1) (stream t))
@@ -46,31 +41,39 @@
   (string-trim '(#\Space #\Tab #\Newline) string))
 
 (defun print-result (test)
-  (destructuring-bind (test-name fn &rest args) (funcall test)
-    (let ((result (apply fn args)))
-      (format t "~%")
+  (destructuring-bind (test-name fn actual expected) test
+    (format t "~%")
+    (let ((result
+            (if expected
+              (funcall fn actual expected)
+              (funcall fn actual))))
       (cond
         ((null result)
           (print-colourfully "❌ SORRY " :red)
           (print-colourfully test-name)
           (fresh-line)
           (print-colourfully "Checking " :Black 0)
-          (print-colourfully (string-downcase (nth-value 2 (function-lambda-expression fn))) :blue 0)
-          (when (and (second args) (string-not-equal "" (second args)))
+          (print-colourfully (string-downcase
+                               (nth-value 2
+                                 (function-lambda-expression fn)))
+            :blue 0)
+          (when expected
             (fresh-line)
             (print-colourfully "Expected " :Black 0)
-            (print-colourfully (trim (second args)) :green))
+            (print-colourfully (trim expected) :green))
           (fresh-line)
           (print-colourfully "Received " :Black 0)
-          (print-colourfully (trim (first args)) :red))
+          (print-colourfully (trim actual) :red)
+          nil)
         (t
           (print-colourfully "✅ PASS " :green)
-          (print-colourfully test-name))))
-    (fresh-line)))
+          (print-colourfully test-name)
+          t)))))
 
 
 (defun run-test-cases ()
-  (loop
-    for test-result
-    in (collect-test-cases)
-    do (print-result test-result)))
+  (print (loop
+           for test-result
+           in (collect-test-cases)
+           collect (print-result test-result)))
+  (fresh-line))

@@ -1,7 +1,7 @@
 (defsystem "kdl"
 	:author "chee <yay@chee.party>"
 	:version "0.0"
-	:depends-on ("alexandria" "esrap")
+	:depends-on ("alexandria" "esrap" "parse-number")
 	:components ((:file "kdl"))
 	:in-order-to ((test-op (test-op "kdl/t"))))
 

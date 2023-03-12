@@ -3,6 +3,8 @@
   (:use
     :common-lisp
     :esrap)
+  (:import-from :parse-number :parse-number)
+  (:import-from :alexandria :compose)
   (:export
     :read-document
     :from-string
@@ -22,7 +24,8 @@
       #\return
       #\next-line
       #\line_separator
-      #\paragraph_separator)))
+      #\paragraph_separator))
+  (:constant #\newline))
 
 (defrule bom
   (char #\zero_width_no-break_space))
@@ -47,17 +50,13 @@
   (:constant nil))
 
 (defrule horizontal-space
-  (or unicode-whitespace bom multiline-comment))
+  (or unicode-whitespace bom multiline-comment)
+  (:constant " "))
 
 
-;; TODO Should this include the following expression?
-(defrule node-comment-start "/-"
-  (:constant nil))
 (defrule line-comment
   (and "//" (* (not vertical-space)))
   (:constant nil))
-
-(defrule boolean (or "true" "false"))
 
 (defrule number-sign (or #\+ #\-))
 
@@ -67,39 +66,86 @@
   (or digit (character-ranges (#\A #\F) (#\a #\f))))
 
 (defrule hex-number
-  (and "0x" (and hexit (* (or hexit #\_)))))
+  (and "0x" (and (and hexit) (* (or hexit #\_))))
+  (:destructure (marker (first-number rest-of-the-numbers))
+    (declare (ignore marker))
+    (parse-integer
+      (concatenate 'string
+        first-number
+        (remove-if 'underscorep rest-of-the-numbers))
+      :radix #x10)))
 
 (defrule octade (character-ranges (#\0 #\7)))
 (defrule octal-number
-  (and "0o" (and octade (* (or octade #\_)))))
+  (and "0o" (and (and octade) (* (or octade #\_))))
+  (:destructure (marker (first-number rest-of-the-numbers))
+    (declare (ignore marker))
+    (parse-integer
+      (concatenate 'string
+        first-number
+        (remove-if 'underscorep rest-of-the-numbers))
+      :radix #o10)))
 
-(defrule bit (or #\0 #\1))
+(defrule bit (character-ranges (#\0 #\1)))
 (defrule binary-number
-  (and "0b" (and bit (* (or bit #\_)))))
+  (and "0b" (and (and bit) (* (or bit #\_))))
+  (:destructure (marker (first-number rest-of-the-numbers))
+    (declare (ignore marker))
+    (parse-integer
+      (concatenate 'string
+        first-number
+        (remove-if 'underscorep rest-of-the-numbers))
+      :radix #b10)))
+
+(defun sign-function (maybe-sign)
+  (if maybe-sign
+    (intern maybe-sign)
+    '+))
+
+(defun apply-sign (maybe-sign number)
+  (flet ((± (number)
+           (funcall (sign-function maybe-sign) number)))
+    (* (± 1) number)))
 
 (defrule whole-number
   (and (? number-sign)
-    (or hex-number)
-    (or octal-number)
-    (or binary-number)))
+    (or
+      hex-number
+      octal-number
+      binary-number))
+  (:destructure (sign number)
+      (apply-sign sign number)))
+
+(defun underscorep (char)
+  (typecase char
+    (string (string= char "_"))
+    (character (char= char #\_))))
 
 (defrule exponent
-  (and (or #\e #\E) (? number-sign) (* (or digit #\_))))
+  (and (or #\e #\E) (? number-sign) (* (or digit #\_)))
+  (:destructure (e sign numbers)
+    (declare (ignore e))
+    (concatenate 'string
+      (list #\d)
+      sign
+      (remove-if 'underscorep numbers))))
 
 (defrule decimal-number
   (and (? number-sign)
-    digit
+    (and digit)
     (* (or digit #\_ #\.))
-    (? exponent)))
+    (? exponent))
+  (:destructure (sign first-number rest-of-the-numbers exponent)
+      (parse-number (concatenate 'string
+                     sign
+                     first-number
+                     (mapcar
+                       'character
+                       (remove-if 'underscorep rest-of-the-numbers))
+                     (or exponent "")))))
 
 (defrule number
-  (or decimal-number whole-number))
-
-(defun code-chars (&rest codes)
-  (loop for code in codes collect
-    (typecase code
-      (cons (apply 'code-chars code))
-      (integer (code-char code)))))
+  (or whole-number decimal-number))
 
 (defrule non-number-identifier-character
   (or
@@ -114,7 +160,8 @@
 
 (defrule bare-identifier
   (and non-number-identifier-character
-    (* (or non-number-identifier-character digit number-sign))))
+    (* (or non-number-identifier-character digit number-sign)))
+  (:text t))
 
 (defrule escape
   (or #\" #\\ #\b #\n #\r #\t
@@ -129,7 +176,6 @@
 
 (defrule string-character
   (or (and #\\ escape) (not (or "\\" "\"")))
-  ;; TODO is everything else chars? will this be a problem?
   (:text t))
 
 (defrule basic-string
@@ -144,16 +190,55 @@
 (defrule raw-string
   (and "r" raw-string-hash))
 
-(defrule string (or basic-string raw-string))
+(defrule string (or basic-string raw-string)
+  (:destructure (lq string rq)
+    (declare (ignore lq rq))
+    (concatenate 'string (mapcar 'character string))))
+
+;; TODO Should an identifier be a symbol?
+;; Probably... Maybe... a keyword?
 (defrule identifier (or bare-identifier string)
-  (:text t))
+  (:text t)
+  ;; (:function intern)
+  )
+
+(defmacro string=case (keyform &body cases)
+  (let ((value (gensym)))
+    `(let ((,value ,keyform))
+       (declare (ignorable ,value))
+       (cond
+         ,@(mapcar
+             (lambda (case)
+               `((string= ,value ,(first case)) ,@(rest case)))
+             cases)))))
+
+(defvar *parse-keywords-as-keywords* t)
+
 (defrule keyword
-  (or boolean "null")
-  (:text t))
-(defrule type (and #\( identifier #\)))
+  (or "true" "false" "null")
+  (:lambda (text)
+    (if *parse-keywords-as-keywords*
+      (intern (string-upcase text) :keyword)
+      (string=case text
+        ("true" t)
+        ("false" nil)
+        ("null" nil)))))
+
+(defrule type (and #\( identifier #\))
+  (:destructure (< type-identifier >)
+    (declare (ignore < >))
+    ;;(intern (string-upcase type-identifier) :keyword)
+    type-identifier))
+
 (defrule value (and (? type) (or string number keyword))
-  (:text t))
-(defrule property (and identifier "=" value))
+  (:destructure (type value)
+    (cons value type)))
+
+(defrule property (and (? type) identifier "=" value)
+  (:destructure (type property = value)
+    (declare (ignore =))
+    (cons (list property type) value)))
+
 (defrule escaped-vertical-space
   (and #\\ (* horizontal-space) vertical-space))
 
@@ -164,53 +249,194 @@
 
 (defrule node-terminator (or line-comment vertical-space ";"))
 (defrule node-comment-start (and "/-" (* node-space)))
-(defrule space (or vertical-space horizontal-space line-comment))
-(defrule node-property-value
-  (and (? node-comment-start) (or property value)))
+(defrule space
+  (or vertical-space horizontal-space line-comment)
+  (:constant nil))
+
+(defrule node-property
+  (and (? node-comment-start) (or property value))
+  (:destructure (commentp property)
+    (unless commentp
+      (cond
+        ((consp (cdr property)) property)
+        (t (cons nil property))))))
+
 (defrule node-children
-  (and (? node-comment-start)
-    "{" nodes "}"))
+  (and (? node-comment-start) "{" nodes "}")
+  (:destructure (commentp { children })
+    (declare (ignore { }))
+    (unless commentp children)))
+
+(defrule node-property-inline
+  (and horizontal-space+ node-property)
+  (:destructure (leading-space property)
+    (declare (ignore leading-space))
+    property))
+
+(defrule node-children-inline
+  (and node-space* node-children horizontal-space*)
+  (:destructure (leading-space children trailing-space)
+    (declare (ignore leading-space trailing-space))
+    children))
+
 (defrule node
   (and
     (? node-comment-start)
     (? type)
     identifier
-    (* (and horizontal-space+ node-property-value))
-    (? (and node-space* node-children horizontal-space*))
-    node-space*))
-(defrule node-properties (* (and (* node-space))))
-(defrule node-space* (* node-space))
-(defrule node-space+ (+ node-space))
-(defrule horizontal-space+ (+ horizontal-space))
-(defrule horizontal-space* (* horizontal-space)
-  (:constant " "))
+    (* node-property-inline)
+    (? node-children-inline)
+    node-space*
+    node-terminator)
+  (:destructure (commentp type name properties children space terminator)
+    (declare (ignore space terminator))
+    (unless commentp
+      (list
+        name
+        properties
+        children
+        type))))
 
+(defrule node-space* (* node-space)
+  (:constant nil))
+(defrule node-space+ (+ node-space)
+  (:constant nil))
+(defrule horizontal-space+ (+ horizontal-space)
+  (:constant nil))
+(defrule horizontal-space* (* horizontal-space)
+  (:constant nil))
+
+(defrule space* (* space)
+  (:constant nil))
+
+(defun fledge (nodes)
+  (unless (null nodes)
+    (if (= 1 (length nodes))
+      nodes
+      `(,(first nodes)
+         ,@(second nodes)))))
+
+
+;; TODO there's an extra nil hanging around
+;; TODO query language?
 (defrule nodes
-  (and (* space)
-    (? (and node (? nodes))) (* space)))
+  (and
+    (* space)
+    (and (? node) (? nodes))
+    (* space))
+  (:destructure (leading-space nodes trailing-space)
+    (declare (ignore leading-space trailing-space))
+    (fledge nodes)))
+
+(defrule document nodes)
+(defun parse-document (document)
+  (parse 'document
+    ;; lol, i don't know if esrap can treat EOF as a parsable thing
+    ;; maybe i could use (function) and check the position and length?
+    (concatenate 'string document '(#\newline))))
+
+;; TODO setf forms
+(defun value (value)
+  (car value))
+(defun value-type (value)
+  (cdr value))
+(defun property (property)
+  (car (car property)))
+(defun property-type (property)
+  (cadr (car property)))
+(defun property-value (property)
+  (value (cdr property)))
+(defun property-value-type (property)
+  (value-type (cdr property)))
+(defun node-name (node)
+  (first node))
+(defun node-properties (node)
+  (second node))
+(defun node-children (node)
+  (third node))
+(defun node-type (node)
+  (first (last node)))
+
 
 ;; TODO if i use CLOS i can have one `read-document` generic with methods for
 ;; streams, strings and files
+;; Unfortunately I can't stream the input because esrap doesn't support that
 (defun read-document (&optional (stream *standard-input*))
   "Read the kdl file on STREAM into lisp structures."
-  (declare (ignore stream)))
+  (from-string (alexandria:read-stream-content-into-string stream)))
 
 (defun from-string (string)
-  (with-input-from-string (stream string)
-    (read stream)))
+  (parse-document string))
 
 (defun from-file (filespec)
   (with-open-file (stream filespec)
-    (read stream)))
+    (read-document stream)))
 
-(defun write-document (document &optional (output-stream *standard-output*))
+(from-file (asdf:system-relative-pathname :kdl "t/test-cases/input/emoji.kdl"))
+
+(defun write-type (type &optional (stream *standard-output*))
+  (write-char #\( stream)
+  (write-string type stream)
+  (write-char #\) stream))
+
+(defun write-property (property &optional (stream *standard-output*))
+  (write-char #\space stream)
+  (let ((name (property property))
+         (type (property-type property))
+         (value (property-value property))
+         (value-type (property-value-type property)))
+    ;; TODO handle non-identifier
+    (when type
+      (write-type type stream))
+    (when name
+      (write-string name stream)
+      (write-char #\= stream))
+    (when value-type
+      (write-type value-type stream))
+    ;; TODO typecase
+    (typecase value
+      (keyword (format stream "~a" (string-downcase (symbol-name value))))
+      (double-float (princ (substitute #\E #\d (format nil "~a" value)) stream))
+      (null (format stream "null"))
+      (number (format stream "~a" value))
+      (string (format stream "~s" value))
+      (t (format stream "~s" value)))))
+
+(defun write-children (children &optional (stream *standard-output*))
+  (write-string " {" stream)
+  (loop for child in children do (write-node child stream))
+  (write-string "
+}" stream))
+
+(defun write-node (node &optional (stream *standard-output*))
+  (when node
+    (let ((name (node-name node))
+           (type (node-type node))
+           (properties (node-properties node))
+           (children (node-children node)))
+      (fresh-line stream)
+      (when type (write-type type stream))
+      (write-string name stream)
+      (loop for property in properties do (write-property property stream))
+      (when children (write-children children stream)))))
+
+;; There's no reason not to stream output just because I can't stream input
+(defun write-document (document &optional (stream *standard-output*))
   "Write the kdl DOCUMENT to OUTPUT-STREAM."
-  (declare (ignore document))
-  (write-string "node \"arg2\"" output-stream))
+  (loop for node in document
+    do (write-node node stream))
+  (fresh-line)
+  (format stream "~%"))
 
 (defun to-string (document)
-  (declare (ignore document))
-  (the string "node 0
-"))
+  (with-output-to-string (output)
+    (write-document document output)))
 
-(defun to-file nil)
+(defun to-file (document filespec)
+  (with-open-file (file-stream filespec
+                    :direction :output
+                    :if-exists :supersede)
+    (write-document document file-stream)))
+
+(defun io (string)
+  (to-string (from-string string)))
