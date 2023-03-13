@@ -14,6 +14,39 @@
     :to-file))
 (in-package :kdl)
 
+(defun code-chars (codes)
+  (loop for code in codes collect
+    (typecase code
+      (cons (apply 'code-chars code))
+      (integer (code-char code)))))
+
+(defun range (min max)
+  (loop for i upto max upfrom min collect i))
+
+(defun identifier-char-p (char)
+  (declare (type character char))
+  (let ((crimes
+          (concatenate 'list
+            (code-chars (range #x0 #x20))
+            " "
+            "\\/(){}<>;[]=,\"")))
+    (not (member char crimes))))
+
+(defun bare-identifier-p (string)
+  (let* ((length (length string))
+          (first-char (and (> length 0) (char string 0)))
+          (second-char (and (> length 1) (char string 1)))
+          (first-char-is-digit (and first-char (digit-char-p first-char)))
+          (first-char-is-hyphen (and first-char (char= first-char #\-)))
+          (second-char-is-digit (and second-char (digit-char-p second-char))))
+    (and
+      (every 'identifier-char-p string)
+      (not first-char-is-digit)
+      (not (and first-char-is-hyphen second-char-is-digit))
+      (not (string= string "null"))
+      (not (string= string "true"))
+      (not (string= string "false")))))
+
 ;; TODO Maybe the parser should be a different file?
 (defrule vertical-space
   (or
@@ -53,49 +86,54 @@
   (or unicode-whitespace bom multiline-comment)
   (:constant " "))
 
-
 (defrule line-comment
   (and "//" (* (not vertical-space)))
   (:constant nil))
 
 (defrule number-sign (or #\+ #\-))
 
-(defrule digit (character-ranges (#\0 #\9)))
+(defun reduce-number (number-list)
+  (destructuring-bind (first-number rest-of-the-numbers) number-list
+    (concatenate 'string
+      (list first-number)
+      (remove-if 'underscorep rest-of-the-numbers))))
 
+(defrule digit (character-ranges (#\0 #\9)))
+(defrule digits
+  (and digit (* (or digit #\_)))
+  (:function reduce-number))
+
+;; TODO this is repetititive
 (defrule hexit
   (or digit (character-ranges (#\A #\F) (#\a #\f))))
-
+(defrule hexits
+  (and hexit (* (or hexit #\_)))
+  (:function reduce-number))
 (defrule hex-number
-  (and "0x" (and (and hexit) (* (or hexit #\_))))
-  (:destructure (marker (first-number rest-of-the-numbers))
+  (and "0x" hexits)
+  (:destructure (marker number)
     (declare (ignore marker))
-    (parse-integer
-      (concatenate 'string
-        first-number
-        (remove-if 'underscorep rest-of-the-numbers))
-      :radix #x10)))
+    (parse-integer number :radix #x10)))
 
 (defrule octade (character-ranges (#\0 #\7)))
+(defrule octades
+  (and octade (* (or octade #\_)))
+  (:function reduce-number))
 (defrule octal-number
-  (and "0o" (and (and octade) (* (or octade #\_))))
-  (:destructure (marker (first-number rest-of-the-numbers))
+  (and "0o" octades)
+  (:destructure (marker number)
     (declare (ignore marker))
-    (parse-integer
-      (concatenate 'string
-        first-number
-        (remove-if 'underscorep rest-of-the-numbers))
-      :radix #o10)))
+    (parse-integer number :radix #o10)))
 
 (defrule bit (character-ranges (#\0 #\1)))
+(defrule bits
+  (and bit (* (or bit #\_)))
+  (:function reduce-number))
 (defrule binary-number
-  (and "0b" (and (and bit) (* (or bit #\_))))
-  (:destructure (marker (first-number rest-of-the-numbers))
+  (and "0b" bits)
+  (:destructure (marker number)
     (declare (ignore marker))
-    (parse-integer
-      (concatenate 'string
-        first-number
-        (remove-if 'underscorep rest-of-the-numbers))
-      :radix #b10)))
+    (parse-integer number :radix #b10)))
 
 (defun sign-function (maybe-sign)
   (if maybe-sign
@@ -122,45 +160,63 @@
     (character (char= char #\_))))
 
 (defrule exponent
-  (and (or #\e #\E) (? number-sign) (* (or digit #\_)))
+  (and (or #\e #\E) (? number-sign) digits)
   (:destructure (e sign numbers)
     (declare (ignore e))
     (concatenate 'string
       (list #\d)
       sign
-      (remove-if 'underscorep numbers))))
+      numbers)))
 
 (defrule decimal-number
   (and (? number-sign)
-    (and digit)
-    (* (or digit #\_ #\.))
+    digits
+    (? (and "." digits))
     (? exponent))
-  (:destructure (sign first-number rest-of-the-numbers exponent)
-      (parse-number (concatenate 'string
-                     sign
-                     first-number
-                     (mapcar
-                       'character
-                       (remove-if 'underscorep rest-of-the-numbers))
-                     (or exponent "")))))
+  (:destructure (sign number fraction exponent)
+    (parse-number
+      (concatenate 'string
+        sign
+        number
+        (when fraction (first fraction))
+        (when fraction (second fraction))
+        (or exponent "")))))
 
 (defrule number
   (or whole-number decimal-number))
 
-(defrule non-number-identifier-character
+(defrule non-identifier-char
   (or
     (character-ranges
-      #\!
-      (#\# #\')
-      #\* #\+ #\- #\. #\:
-      (#\? #\Z)
-      (#\^ #\z)
-      #\|
-      (#\~ #\UFFFF))))
+      #\\ #\/ #\( #\) #\{ #\} #\<
+      #\> #\; #\[ #\] #\= #\, #\"
+      (#\nul #\space))))
+
+(defun parse-initial-char (text position end)
+  (let* ((length (- end position))
+          (first-chars (if (> length 1)
+                         (subseq text position (+ position 1))
+                         (subseq text position position))))
+    (if (and
+          (> length 0)
+          (bare-identifier-p first-chars))
+      (values (char first-chars 0) (1+ position))
+      (values first-chars position))))
+
+(defrule initial-char
+  (function parse-initial-char))
+
+(defun parse-bare-identifier (text position end)
+  (let (match)
+    (loop for e upto end upfrom position
+      do (let ((sub (subseq text position e)))
+           (if (bare-identifier-p sub)
+             (setf match sub)
+             (return))))
+    (values match (+ (length match) position))))
 
 (defrule bare-identifier
-  (and non-number-identifier-character
-    (* (or non-number-identifier-character digit number-sign)))
+  (function parse-bare-identifier)
   (:text t))
 
 (defrule escape
@@ -198,9 +254,7 @@
 ;; TODO Should an identifier be a symbol?
 ;; Probably... Maybe... a keyword?
 (defrule identifier (or bare-identifier string)
-  (:text t)
-  ;; (:function intern)
-  )
+  (:text t))
 
 (defmacro string=case (keyform &body cases)
   (let ((value (gensym)))
@@ -316,7 +370,6 @@
       `(,(first nodes)
          ,@(second nodes)))))
 
-
 ;; TODO there's an extra nil hanging around
 ;; TODO query language?
 (defrule nodes
@@ -373,8 +426,6 @@
   (with-open-file (stream filespec)
     (read-document stream)))
 
-(from-file (asdf:system-relative-pathname :kdl "t/test-cases/input/emoji.kdl"))
-
 (defparameter *indent* 0)
 
 (defun write-indent ()
@@ -408,7 +459,6 @@
         (number (format t "~a" value))
         (string (format t "~s" value))
         (t (format t "~s" value))))))
-
 
 (defun write-children (children)
   (write-string " {")
@@ -445,10 +495,14 @@
     (write-document document output)))
 
 (defun to-file (document filespec)
-  (with-open-file (file-stream filespec
-                    :direction :output
-                    :if-exists :supersede)
+  (with-open-file
+    (file-stream filespec
+      :direction :output
+      :if-exists :supersede)
     (write-document document file-stream)))
 
-(defun io (string)
+(defmethod io ((string string))
   (to-string (from-string string)))
+
+(defmethod io ((file pathname))
+  (to-string (from-file file)))
