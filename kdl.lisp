@@ -380,27 +380,29 @@
   (write-char #\) stream))
 
 (defun write-property (property &optional (stream *standard-output*))
-  (write-char #\space stream)
   (let ((name (property property))
          (type (property-type property))
          (value (property-value property))
          (value-type (property-value-type property)))
-    ;; TODO handle non-identifier
-    (when type
-      (write-type type stream))
-    (when name
-      (write-string name stream)
-      (write-char #\= stream))
-    (when value-type
-      (write-type value-type stream))
-    ;; TODO typecase
-    (typecase value
-      (keyword (format stream "~a" (string-downcase (symbol-name value))))
-      (double-float (princ (substitute #\E #\d (format nil "~a" value)) stream))
-      (null (format stream "null"))
-      (number (format stream "~a" value))
-      (string (format stream "~s" value))
-      (t (format stream "~s" value)))))
+    (when (or name value)
+      (write-char #\space stream)
+      ;; TODO handle non-identifier
+      (when type
+        (write-type type stream))
+      (when name
+        (write-string name stream)
+        (write-char #\= stream))
+      (when value-type
+        (write-type value-type stream))
+      ;; TODO typecase
+      (typecase value
+        (keyword (format stream "~a" (string-downcase (symbol-name value))))
+        (double-float (princ (substitute #\E #\d (format nil "~a" value)) stream))
+        (null (format stream "null"))
+        (number (format stream "~a" value))
+        (string (format stream "~s" value))
+        (t (format stream "~s" value))))))
+
 
 (defun write-children (children &optional (stream *standard-output*))
   (write-string " {" stream)
@@ -418,7 +420,8 @@
       (when type (write-type type stream))
       (write-string name stream)
       (loop for property in properties do (write-property property stream))
-      (when children (write-children children stream)))))
+      (when (and children (not (every 'null children)))
+        (write-children children stream)))))
 
 ;; There's no reason not to stream output just because I can't stream input
 (defun write-document (document &optional (stream *standard-output*))

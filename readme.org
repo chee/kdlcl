@@ -1,0 +1,41 @@
+* kdl
+
+[[https://kdl.dev/][KDL]] reader/writer for Common Lisp.
+
+Parses it to a fancy list.
+
+#+begin_src common-lisp
+;; Reading
+(read-document stream)
+(kdl:from-string string)
+(kdl:from-file filespec)
+
+;; Writing
+(write-document stream)
+(kdl:to-string string)
+(kdl:to-file filespec)
+
+;;; Sniffing about
+;; Get the value from a value cons
+(value value)
+;; Get the type from a value cons
+(value-type value)
+;; Get the name of a property
+(property property)
+;; Get the type of a property
+(property-type property)
+;; Get the value from a property
+(property-value property)
+;; Get the value-type from a property
+(property-value-type property)
+;; Get the name of a node
+(node-name node)
+;; Get the properties from a node
+(node-properties node)
+;; Get the children from a node
+(node-children node)
+;; Get the type of a node
+(node-type node)
+#+end_src
+
+Still doesn't pass all the tests.
