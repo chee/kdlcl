@@ -357,10 +357,11 @@
 (defun node-type (node)
   (first (last node)))
 
-
 ;; TODO if i use CLOS i can have one `read-document` generic with methods for
 ;; streams, strings and files
+
 ;; Unfortunately I can't stream the input because esrap doesn't support that
+;; TODO esrap-liquid might work?
 (defun read-document (&optional (stream *standard-input*))
   "Read the kdl file on STREAM into lisp structures."
   (from-string (alexandria:read-stream-content-into-string stream)))
@@ -373,6 +374,11 @@
     (read-document stream)))
 
 (from-file (asdf:system-relative-pathname :kdl "t/test-cases/input/emoji.kdl"))
+
+(defparameter *indent* 0)
+
+(defun write-indent (stream)
+  (format stream "~v@{~A~:*~}" (* *indent* 4) " "))
 
 (defun write-type (type &optional (stream *standard-output*))
   (write-char #\( stream)
@@ -406,9 +412,12 @@
 
 (defun write-children (children &optional (stream *standard-output*))
   (write-string " {" stream)
-  (loop for child in children do (write-node child stream))
-  (write-string "
-}" stream))
+  (loop for child in children do
+    (let ((*indent* (1+ *indent*)))
+      (write-node child stream)))
+  (write-char #\newline stream)
+  (write-indent stream)
+  (write-string "}" stream))
 
 (defun write-node (node &optional (stream *standard-output*))
   (when node
@@ -417,13 +426,13 @@
            (properties (node-properties node))
            (children (node-children node)))
       (fresh-line stream)
+      (write-indent stream)
       (when type (write-type type stream))
       (write-string name stream)
       (loop for property in properties do (write-property property stream))
       (when (and children (not (every 'null children)))
         (write-children children stream)))))
 
-;; There's no reason not to stream output just because I can't stream input
 (defun write-document (document &optional (stream *standard-output*))
   "Write the kdl DOCUMENT to OUTPUT-STREAM."
   (loop for node in document
