@@ -4,7 +4,7 @@
 
 Parses it to a fancy list.
 
-#+begin_src common-lisp
+#+begin_src lisp
 ;; Reading
 (read-document stream)
 (kdl:from-string string)
