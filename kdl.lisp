@@ -377,68 +377,68 @@
 
 (defparameter *indent* 0)
 
-(defun write-indent (stream)
-  (format stream "~v@{~A~:*~}" (* *indent* 4) " "))
+(defun write-indent ()
+  (format t "~v@{~A~:*~}" (* *indent* 4) " "))
 
-(defun write-type (type &optional (stream *standard-output*))
-  (write-char #\( stream)
-  (write-string type stream)
-  (write-char #\) stream))
+(defun write-type (type)
+  (write-char #\()
+  (write-string type)
+  (write-char #\)))
 
-(defun write-property (property &optional (stream *standard-output*))
+(defun write-property (property)
   (let ((name (property property))
          (type (property-type property))
          (value (property-value property))
          (value-type (property-value-type property)))
     (when (or name value)
-      (write-char #\space stream)
+      (write-char #\space)
       ;; TODO handle non-identifier
       (when type
-        (write-type type stream))
+        (write-type type))
       (when name
-        (write-string name stream)
-        (write-char #\= stream))
+        (write-string name)
+        (write-char #\=))
       (when value-type
-        (write-type value-type stream))
+        (write-type value-type))
       ;; TODO typecase
       (typecase value
-        (keyword (format stream "~a" (string-downcase (symbol-name value))))
-        (double-float (princ (substitute #\E #\d (format nil "~a" value)) stream))
-        (null (format stream "null"))
-        (number (format stream "~a" value))
-        (string (format stream "~s" value))
-        (t (format stream "~s" value))))))
+        (keyword (format t "~a" (string-downcase (symbol-name value))))
+        (double-float (princ (substitute #\E #\d (format nil "~a" value))))
+        (null (format t "null"))
+        (number (format t "~a" value))
+        (string (format t "~s" value))
+        (t (format t "~s" value))))))
 
 
-(defun write-children (children &optional (stream *standard-output*))
-  (write-string " {" stream)
+(defun write-children (children)
+  (write-string " {")
   (loop for child in children do
     (let ((*indent* (1+ *indent*)))
-      (write-node child stream)))
-  (write-char #\newline stream)
-  (write-indent stream)
-  (write-string "}" stream))
+      (write-node child)))
+  (write-char #\newline)
+  (write-indent)
+  (write-string "}"))
 
-(defun write-node (node &optional (stream *standard-output*))
+(defun write-node (node)
   (when node
     (let ((name (node-name node))
            (type (node-type node))
            (properties (node-properties node))
            (children (node-children node)))
-      (fresh-line stream)
-      (write-indent stream)
-      (when type (write-type type stream))
-      (write-string name stream)
-      (loop for property in properties do (write-property property stream))
+      (fresh-line)
+      (write-indent)
+      (when type (write-type type))
+      (write-string name)
+      (loop for property in properties do (write-property property))
       (when (and children (not (every 'null children)))
-        (write-children children stream)))))
+        (write-children children)))))
 
 (defun write-document (document &optional (stream *standard-output*))
   "Write the kdl DOCUMENT to OUTPUT-STREAM."
-  (loop for node in document
-    do (write-node node stream))
-  (fresh-line)
-  (format stream "~%"))
+  (let ((*standard-output* stream))
+    (loop for node in document
+      do (write-node node))
+    (fresh-line)))
 
 (defun to-string (document)
   (with-output-to-string (output)
