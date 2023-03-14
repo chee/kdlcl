@@ -22,12 +22,10 @@ Parses it to a fancy list.
 (value-type value)
 ;; Get the name of a property
 (property property)
-;; Get the type of a property
-(property-type property)
 ;; Get the value from a property
 (property-value property)
 ;; Get the value-type from a property
-(property-value-type property)
+(property-type property)
 ;; Get the name of a node
 (node-name node)
 ;; Get the properties from a node

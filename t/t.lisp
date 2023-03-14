@@ -84,3 +84,13 @@
       (count t results)
       (count-if 'null results)
       (length results))))
+
+(defun run-test-by-name (name)
+  (kdl::io
+    (asdf:system-relative-pathname
+      :kdl (format nil "t/test-cases/input/~a.kdl" name))))
+
+(defun parse-test-by-name (name)
+  (kdl::from-file
+    (asdf:system-relative-pathname
+      :kdl (format nil "t/test-cases/input/~a.kdl" name))))

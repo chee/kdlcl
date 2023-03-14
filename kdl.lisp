@@ -4,7 +4,6 @@
     :common-lisp
     :esrap)
   (:import-from :parse-number :parse-number)
-  (:import-from :alexandria :compose)
   (:export
     :read-document
     :from-string
@@ -27,6 +26,7 @@
   (declare (type character char))
   (let ((crimes
           (concatenate 'list
+            ;; TODO should this include all whitespace?
             (code-chars (range #x0 #x20))
             " "
             "\\/(){}<>;[]=,\"")))
@@ -47,7 +47,6 @@
       (not (string= string "true"))
       (not (string= string "false")))))
 
-;; TODO Maybe the parser should be a different file?
 (defrule vertical-space
   (or
     (and #\return #\newline)
@@ -72,7 +71,7 @@
        (character-ranges (#\en_quad #\thin_space))
        #\narrow_no-break_space
        #\medium_mathematical_space ; lol
-       #\ideographic_space))
+    #\ideographic_space))
 
 (defrule multiline-comment-start "/*")
 (defrule multiline-comment-end "*/")
@@ -174,13 +173,16 @@
     (? (and "." digits))
     (? exponent))
   (:destructure (sign number fraction exponent)
-    (parse-number
-      (concatenate 'string
-        sign
-        number
-        (when fraction (first fraction))
-        (when fraction (second fraction))
-        (or exponent "")))))
+    (handler-case
+      (parse-number
+        (concatenate 'string
+          sign
+          number
+          (when fraction (first fraction))
+          (when fraction (second fraction))
+          (or exponent "")))
+      (floating-point-overflow ()
+        (apply-sign sign most-positive-double-float)))))
 
 (defrule number
   (or whole-number decimal-number))
@@ -207,31 +209,52 @@
   (function parse-initial-char))
 
 (defun parse-bare-identifier (text position end)
-  (let (match)
-    (loop for e upto end upfrom position
-      do (let ((sub (subseq text position e)))
-           (if (bare-identifier-p sub)
-             (setf match sub)
-             (return))))
-    (values match (+ (length match) position))))
+  (let* ((perspective (subseq text position end))
+         (first-space-index
+           (loop for char in (coerce perspective 'list) and i upfrom 0
+             do (when (not (identifier-char-p char)) (return i))))
+          (token (subseq perspective 0 first-space-index)))
+    (if (bare-identifier-p token)
+      (values token (+ (length token) position))
+      (values nil position))))
 
 (defrule bare-identifier
   (function parse-bare-identifier)
   (:text t))
 
+(defparameter *escape-map*
+  '(#\n #\newline
+     #\r #\return
+     #\t #\tab
+     #\\ #\reverse_solidus
+     #\/ #\solidus
+     #\" #\quotation_mark
+     #\b #\backspace
+     #\f #\page))
+
 (defrule escape
-  (or #\" #\\ #\b #\n #\r #\t
-    (and "u"
-      hexit
-      (? hexit)
-      (? hexit)
-      (? hexit)
-      (? hexit)
-      (? hexit)))
-  (:text t))
+  (and #\\
+    (or #\n #\" #\\ #\b #\r #\t #\f #\/
+      (and "u{"
+        hexit
+        (? hexit)
+        (? hexit)
+        (? hexit)
+        (? hexit)
+        (? hexit)
+        #\})))
+  (:destructure (slash escape)
+    (declare (ignore slash))
+    (print escape)
+    (if (listp escape)
+      (code-char
+        (parse-integer
+          (concatenate 'string (remove-if 'null (subseq escape 1 7)))
+          :radix 16))
+      (getf *escape-map* (char escape 0)))))
 
 (defrule string-character
-  (or (and #\\ escape) (not (or "\\" "\"")))
+  (or escape (not (or #\reverse_solidus #\quotation_mark)))
   (:text t))
 
 (defrule basic-string
@@ -288,13 +311,13 @@
   (:destructure (type value)
     (cons value type)))
 
-(defrule property (and (? type) identifier "=" value)
-  (:destructure (type property = value)
+(defrule property (and identifier "=" value)
+  (:destructure (property = value)
     (declare (ignore =))
-    (cons (list property type) value)))
+    (cons property value)))
 
 (defrule escaped-vertical-space
-  (and #\\ (* horizontal-space) vertical-space))
+  (and #\\ vertical-space))
 
 (defrule node-space
   (or
@@ -394,12 +417,10 @@
 (defun value-type (value)
   (cdr value))
 (defun property (property)
-  (car (car property)))
-(defun property-type (property)
-  (cadr (car property)))
+  (car property))
 (defun property-value (property)
   (value (cdr property)))
-(defun property-value-type (property)
+(defun property-type (property)
   (value-type (cdr property)))
 (defun node-name (node)
   (first node))
@@ -431,34 +452,52 @@
 (defun write-indent ()
   (format t "~v@{~A~:*~}" (* *indent* 4) " "))
 
+(defun write-identifier (identifier)
+  (if (and (bare-identifier-p identifier)
+        (not (string-equal "" identifier)))
+    (write-string identifier)
+    (format t "~s" identifier)))
+
 (defun write-type (type)
   (write-char #\()
-  (write-string type)
+  (write-identifier type)
   (write-char #\)))
+
+(defun write-value (value)
+  (typecase value
+    (keyword (format t "~a" (string-downcase (symbol-name value))))
+    (long-float (princ (substitute #\e #\d (format nil "~a" value))))
+    (null (format t "null"))
+    (number (format t "~a" value))
+    (string
+      (write-char #\")
+      (write-string (replace-escapes value))
+      (write-char #\"))
+    (t (format t "~s" value))))
+
+(defun replace-escapes (string)
+  (apply 'concatenate 'string
+    (loop for char in (coerce string 'list)
+      collect
+      (let ((replacement (getf (reverse *escape-map*) char)))
+        (if replacement
+          (if (char= replacement #\\)
+            (list #\\)
+            `(#\\ ,replacement))
+          (list char))))))
 
 (defun write-property (property)
   (let ((name (property property))
-         (type (property-type property))
          (value (property-value property))
-         (value-type (property-value-type property)))
+         (type (property-type property)))
     (when (or name value)
       (write-char #\space)
-      ;; TODO handle non-identifier
+      (when name
+        (write-identifier name)
+        (write-char #\=))
       (when type
         (write-type type))
-      (when name
-        (write-string name)
-        (write-char #\=))
-      (when value-type
-        (write-type value-type))
-      ;; TODO typecase
-      (typecase value
-        (keyword (format t "~a" (string-downcase (symbol-name value))))
-        (double-float (princ (substitute #\E #\d (format nil "~a" value))))
-        (null (format t "null"))
-        (number (format t "~a" value))
-        (string (format t "~s" value))
-        (t (format t "~s" value))))))
+      (write-value value))))
 
 (defun write-children (children)
   (write-string " {")
@@ -478,7 +517,7 @@
       (fresh-line)
       (write-indent)
       (when type (write-type type))
-      (write-string name)
+      (write-identifier name)
       (loop for property in properties do (write-property property))
       (when (and children (not (every 'null children)))
         (write-children children)))))
@@ -488,7 +527,7 @@
   (let ((*standard-output* stream))
     (loop for node in document
       do (write-node node))
-    (fresh-line)))
+    (format t "~%")))
 
 (defun to-string (document)
   (with-output-to-string (output)
