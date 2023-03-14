@@ -211,7 +211,7 @@
 (defun parse-bare-identifier (text position end)
   (let* ((perspective (subseq text position end))
          (first-space-index
-           (loop for char in (coerce perspective 'list) and i upfrom 0
+           (loop for char across perspective and i upfrom 0
              do (when (not (identifier-char-p char)) (return i))))
           (token (subseq perspective 0 first-space-index)))
     (if (bare-identifier-p token)
@@ -258,15 +258,53 @@
 
 (defrule basic-string
   (and #\" (* string-character) #\"))
-;; TODO I have no idea how to do this.
-;; The greedy (* character) eats the final quote before it can look at it
-(defrule raw-string-quotes
-  (and #\" (* character) #\"))
-(defrule raw-string-hash
-  (or (and "#" raw-string-hash "#")
-        raw-string-quotes))
+
+
+(defun subseq-recklessly (sequence start end)
+  (let ((length (length sequence)))
+    (subseq sequence start (min length end))))
+
+(defun collect-raw-string-contents (string+ string-start-delimiter)
+  (let
+    ((length (length string-start-delimiter)) chars)
+    (loop for char across string+
+      do (push char chars)
+      until (equal
+              (subseq-recklessly chars 0 length)
+              string-start-delimiter))
+    (if (equal
+           (subseq-recklessly chars 0 length)
+          string-start-delimiter)
+      (reverse (subseq chars length))
+      nil)))
+
+(defun parse-raw-string (text position end)
+  (let ((perspective (subseq text position end)))
+    (if (and
+          (> (length perspective) 0)
+          (member
+            (elt perspective 0)
+            (list #\quotation_mark #\number_sign)))
+      (let* ((hashes
+                (loop for char across perspective
+                  collecting char
+                  until (char= #\quotation_mark char)))
+              (hashcount (length hashes))
+              (string
+                (collect-raw-string-contents
+                  (subseq perspective hashcount) hashes))
+              (string-length (length string))
+              (quotes-length (* 2 hashcount)))
+        (if string
+          (values
+            (list hashes string (reverse hashes))
+            (+ position string-length quotes-length))
+          (values nil position)))
+      (values nil position))))
+
 (defrule raw-string
-  (and "r" raw-string-hash))
+  (and "r" (function parse-raw-string))
+  (:function second))
 
 (defrule string (or basic-string raw-string)
   (:destructure (lq string rq)
@@ -275,7 +313,7 @@
 
 ;; TODO Should an identifier be a symbol?
 ;; Probably... Maybe... a keyword?
-(defrule identifier (or bare-identifier string)
+(defrule identifier (or string bare-identifier)
   (:text t))
 
 (defmacro string=case (keyform &body cases)
@@ -295,7 +333,7 @@
   (:lambda (keyword)
     (if *parse-keywords-as-keywords*
       (intern (string-upcase keyword) :keyword)
-      (string=case text
+      (string=case keyword
         ("true" t)
         ("false" nil)
         ("null" nil)))))
@@ -316,14 +354,14 @@
     (cons property value)))
 
 (defrule escaped-vertical-space
-  (and #\\ vertical-space))
+  (and #\\ (* horizontal-space) (? line-comment) vertical-space))
 
 (defrule node-space
   (or
     (and (* horizontal-space) escaped-vertical-space (* horizontal-space))
     (+ horizontal-space)))
 
-(defrule node-terminator (or line-comment vertical-space ";"))
+(defrule node-terminator (or line-comment vertical-space ";" (! character)))
 (defrule node-comment-start (and "/-" (* node-space)))
 (defrule space
   (or vertical-space horizontal-space line-comment)
@@ -416,10 +454,7 @@
 
 (defrule document nodes)
 (defun parse-document (document)
-  (parse 'document
-    ;; lol, i don't know if esrap can treat EOF as a parsable thing
-    ;; maybe i could use (function) and check the position and length?
-    (concatenate 'string document '(#\newline))))
+  (parse 'document document))
 
 ;; TODO setf forms
 (defun value (value)
@@ -487,13 +522,13 @@
 
 (defun replace-escapes (string)
   (apply 'concatenate 'string
-    (loop for char in (coerce string 'list)
+    (loop for char across string
       collect
       (let ((replacement (getf (reverse *escape-map*) char)))
         (if replacement
-          (if (char= replacement #\\)
-            (list #\\)
-            `(#\\ ,replacement))
+          (if (char= replacement #\solidus)
+            (list #\solidus)
+            `(#\reverse_solidus ,replacement))
           (list char))))))
 
 (defun write-property (property)
