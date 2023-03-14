@@ -245,7 +245,6 @@
         #\})))
   (:destructure (slash escape)
     (declare (ignore slash))
-    (print escape)
     (if (listp escape)
       (code-char
         (parse-integer
@@ -356,12 +355,23 @@
     (declare (ignore leading-space trailing-space))
     children))
 
+(defun property= (a b)
+  (and
+    (not (null (property a)))
+    (equal (property a) (property b))))
+
+(defrule node-properties
+  (* node-property-inline)
+  (:lambda (properties)
+    (remove-duplicates properties
+        :test 'property=)))
+
 (defrule node
   (and
     (? node-comment-start)
     (? type)
     identifier
-    (* node-property-inline)
+    node-properties
     (? node-children-inline)
     node-space*
     node-terminator)
