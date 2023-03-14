@@ -292,9 +292,9 @@
 
 (defrule keyword
   (or "true" "false" "null")
-  (:lambda (text)
+  (:lambda (keyword)
     (if *parse-keywords-as-keywords*
-      (intern (string-upcase text) :keyword)
+      (intern (string-upcase keyword) :keyword)
       (string=case text
         ("true" t)
         ("false" nil)
@@ -344,7 +344,7 @@
     (unless commentp children)))
 
 (defrule node-property-inline
-  (and horizontal-space+ node-property)
+  (and node-space+ node-property)
   (:destructure (leading-space property)
     (declare (ignore leading-space))
     property))
