@@ -19,12 +19,13 @@
                       (expected
                         (when succeedp
                           (uiop:read-file-string expectation-path)))
+                      (input (uiop:read-file-string test-file))
                       (actual (handler-case
                                 (kdl:to-string (kdl:from-file test-file))
                                 (error nil))))
                 (if succeedp
-                  (list test-name #'string= actual expected)
-                  (list test-name #'null actual nil))))))
+                  (list test-name #'string= input actual expected)
+                  (list test-name #'null input actual nil))))))
 
 
 (defun print-colourfully (text &optional (colour :black) (style 1) (stream t))
@@ -40,9 +41,9 @@
 (defun trim (string)
   (string-trim '(#\Space #\Tab #\Newline) string))
 
-(defun print-result (test)
-  (destructuring-bind (test-name fn actual expected) test
-    (format t "~%")
+(defun print-result (test &optional only-sorry)
+  (destructuring-bind (test-name fn input actual expected) test
+    (fresh-line)
     (let ((result
             (if expected
               (funcall fn actual expected)
@@ -53,10 +54,14 @@
           (print-colourfully test-name)
           (fresh-line)
           (print-colourfully "Checking " :Black 0)
-          (print-colourfully (string-downcase
-                               (nth-value 2
-                                 (function-lambda-expression fn)))
+          (print-colourfully
+            (string-downcase
+              (nth-value 2
+                (function-lambda-expression fn)))
             :blue 0)
+          (fresh-line)
+          (print-colourfully "Input " :Black 0)
+          (print-colourfully (trim input) :Black)
           (when expected
             (fresh-line)
             (print-colourfully "Expected " :Black 0)
@@ -66,17 +71,16 @@
           (print-colourfully (trim actual) :red)
           nil)
         (t
-          (print-colourfully "✅ PASS " :green)
-          (print-colourfully test-name)
+          (unless only-sorry (print-colourfully "✅ PASS " :green)
+            (print-colourfully test-name))
           t)))))
 
-
-(defun run-test-cases ()
+(defun run-test-cases (&optional only-sorry)
   (let ((results
           (loop
             for test-result
             in (collect-test-cases)
-            collect (print-result test-result))))
+            collect (print-result test-result only-sorry))))
     (fresh-line)
     (princ (substitute "✅" t (substitute "❌" nil results)))
     (fresh-line)
