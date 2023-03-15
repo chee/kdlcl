@@ -387,16 +387,8 @@
     (declare (ignore leading-space trailing-space))
     children))
 
-(defun same-property (a b)
-  (and
-    (not (null (car a)))
-    (equal (car a) (car b))))
-
 (defrule node-properties
-  (* node-property-inline)
-  (:lambda (properties)
-    (remove-duplicates properties
-        :test 'same-property)))
+  (* node-property-inline))
 
 (defrule node
   (and
