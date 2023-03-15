@@ -94,8 +94,4 @@ I haven't been able to test on any other implementations yet because I can't get
 them running on my computer :o(
 
 ** [[file:LICENSE][License]]
-
-[[https://spdx.org/licenses/MIT-0.html][MIT-0]].
-
-I believe this public-domain-equivalent license gives more rights to people in
-France than the Unlicense does. Nevertheless,
+[[https://spdx.org/licenses/MIT-0.html][MIT-0]]
