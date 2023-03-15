@@ -1,6 +1,7 @@
 (defsystem "kdl"
 	:author "chee <yay@chee.party>"
 	:description "A reader and printer for KDL documents."
+	:license "MIT-0"
 	:version "1.0"
 	:depends-on ("uiop" "esrap" "parse-number")
 	:components ((:file "package")
@@ -13,6 +14,7 @@
 (defsystem "kdl/t"
 	:author "chee <yay@chee.party>"
 	:description "kdl test system."
+	:license "MIT-0"
 	:pathname "t/"
 	:depends-on ("kdl")
 	:components ((:file "t"))

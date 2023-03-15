@@ -91,8 +91,11 @@ output is in a different format. For instance, ECL prints the floats in this
 cute fashion: ~1.e10~.
 
 I haven't been able to test on any other implementations yet because I can't get
-them running on my computer :o(.
+them running on my computer :o(
 
 ** [[file:LICENSE][License]]
 
-How about [[https://opensource.org/license/mit-0/][MIT-0]]?
+[[https://spdx.org/licenses/MIT-0.html][MIT-0]].
+
+I believe this public-domain-equivalent license gives more rights to people in
+France than the Unlicense does. Nevertheless,
