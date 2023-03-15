@@ -36,7 +36,7 @@
         (if replacement
           (if (char= replacement #\solidus)
             (list #\solidus)
-            `(#\reverse_solidus ,replacement))
+            `(#\\ ,replacement))
           (list char))))))
 
 (defun print-property (property)
