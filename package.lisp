@@ -25,3 +25,6 @@
     :node-children
     :node-child
     :node-property))
+
+(defpackage :kdl-user
+  (:use :common-lisp :kdl))
