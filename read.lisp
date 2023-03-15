@@ -44,24 +44,29 @@
       #\newline
       #\page
       #\return
-      #\U0085
-      #\line_separator
-      #\paragraph_separator))
+      #\u0085 ; next_line
+      #\u2028 ; line_separator
+      #\u2029 ; paragraph_separator
+      ))
   (:constant #\newline))
 
-(defrule bom
-  (char #\zero_width_no-break_space))
+
+;; zero_width_no-break_space
+(defrule bom (char #\ufeff))
 
 (defrule unicode-whitespace
   (or
-       #\tab
-       #\space
-       #\no-break_space
-       #\ogham_space_mark
-       (character-ranges (#\en_quad #\thin_space))
-       #\narrow_no-break_space
-       #\medium_mathematical_space ; lol
-    #\ideographic_space))
+    #\tab
+    #\space
+    #\no-break_space
+    #\u1680 ; ogham_space_mark
+    (character-ranges
+      ;; enquad to thinspace
+      (#\u2000 #\u2009))
+    #\u202f ; narrow_no-break_space
+    #\u205f ; medium_mathematical_space lol
+    #\u3000 ; ideographic_space
+    ))
 
 (defrule multiline-comment-start "/*")
 (defrule multiline-comment-end "*/")
@@ -216,9 +221,9 @@
   '(#\n #\newline
      #\r #\return
      #\t #\tab
-     #\\ #\reverse_solidus
+     #\\ #\\
      #\/ #\solidus
-     #\" #\quotation_mark
+     #\" #\"
      #\b #\backspace
      #\f #\page))
 
@@ -243,7 +248,7 @@
       (getf *escape-map* (char escape 0)))))
 
 (defrule string-character
-  (or escape (not (or #\reverse_solidus #\quotation_mark)))
+  (or escape (not (or #\\ #\")))
   (:text t))
 
 (defrule basic-string
@@ -274,11 +279,11 @@
           (> (length perspective) 0)
           (member
             (elt perspective 0)
-            (list #\quotation_mark #\number_sign)))
+            (list #\" #\#)))
       (let* ((hashes
                 (loop for char across perspective
                   collecting char
-                  until (char= #\quotation_mark char)))
+                  until (char= #\" char)))
               (hashcount (length hashes))
               (string
                 (collect-raw-string-contents
@@ -439,4 +444,6 @@
     (declare (ignore leading-space trailing-space))
     (fledge nodes)))
 
-(defrule document nodes)
+(defrule document nodes
+  (:lambda (nodes)
+    (remove-if 'null nodes)))
