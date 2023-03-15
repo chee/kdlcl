@@ -3,10 +3,10 @@
 	:version "1.0"
 	:depends-on ("uiop" "esrap" "parse-number")
 	:components ((:file "package")
-						(:file "api")
-						(:file "read")
-						(:file "print")
-						(:file "io"))
+						(:file "api" :depends-on ("package"))
+						(:file "read" :depends-on ("package"))
+						(:file "print" :depends-on ("read" "api"))
+						(:file "io" :depends-on ("read" "print")))
 	:in-order-to ((test-op (test-op "kdl/t"))))
 
 (defsystem "kdl/t"
