@@ -1,3 +1,4 @@
+; From https://github.com/kdl-org/kdl/blob/main/SPEC.md
 nodes ::= linespace* (node nodes?)? linespace*
 node ::= ('/-' node-space*)? type? identifier (node-space+ node-prop-or-arg)* (node-space* node-children ws*)? node-space* node-terminator
 node-prop-or-arg ::= ('/-' node-space*)? (prop | value)

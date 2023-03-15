@@ -90,11 +90,11 @@
       (length results))))
 
 (defun run-test-by-name (name)
-  (kdl::io
-    (asdf:system-relative-pathname
-      :kdl (format nil "t/test-cases/input/~a.kdl" name))))
+  (kdl:to-stream (kdl:read-document
+   (asdf:system-relative-pathname
+     :kdl (format nil "t/test-cases/input/~a.kdl" name)))))
 
 (defun parse-test-by-name (name)
-  (kdl::from-file
+  (kdl:from-file
     (asdf:system-relative-pathname
       :kdl (format nil "t/test-cases/input/~a.kdl" name))))

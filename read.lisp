@@ -1,17 +1,8 @@
-(defpackage :kdl
-  (:nicknames :🐈dl)
-  (:use
-    :common-lisp
-    :esrap)
-  (:import-from :parse-number :parse-number)
-  (:export
-    :read-document
-    :from-string
-    :from-file
-    :write-document
-    :to-string
-    :to-file))
 (in-package :kdl)
+
+;; TODO Switch to esrap-liquid so we can parse a stream?
+(defun parse-document (document)
+  (parse 'document document))
 
 (defun code-chars (codes)
   (loop for code in codes collect
@@ -26,7 +17,6 @@
   (declare (type character char))
   (let ((crimes
           (concatenate 'list
-            ;; TODO should this include all whitespace?
             (code-chars (range #x0 #x20))
             " "
             "\\/(){}<>;[]=,\"")))
@@ -54,7 +44,7 @@
       #\newline
       #\page
       #\return
-      #\next-line
+      #\U0085
       #\line_separator
       #\paragraph_separator))
   (:constant #\newline))
@@ -311,8 +301,6 @@
     (declare (ignore lq rq))
     (concatenate 'string (mapcar 'character string))))
 
-;; TODO Should an identifier be a symbol?
-;; Probably... Maybe... a keyword?
 (defrule identifier (or string bare-identifier)
   (:text t))
 
@@ -362,6 +350,7 @@
     (+ horizontal-space)))
 
 (defrule node-terminator (or line-comment vertical-space ";" (! character)))
+
 (defrule node-comment-start (and "/-" (* node-space)))
 (defrule space
   (or vertical-space horizontal-space line-comment)
@@ -393,16 +382,16 @@
     (declare (ignore leading-space trailing-space))
     children))
 
-(defun property= (a b)
+(defun same-property (a b)
   (and
-    (not (null (property a)))
-    (equal (property a) (property b))))
+    (not (null (car a)))
+    (equal (car a) (car b))))
 
 (defrule node-properties
   (* node-property-inline)
   (:lambda (properties)
     (remove-duplicates properties
-        :test 'property=)))
+        :test 'same-property)))
 
 (defrule node
   (and
@@ -441,8 +430,6 @@
       `(,(first nodes)
          ,@(second nodes)))))
 
-;; TODO there's an extra nil hanging around
-;; TODO query language?
 (defrule nodes
   (and
     (* space)
@@ -453,140 +440,3 @@
     (fledge nodes)))
 
 (defrule document nodes)
-(defun parse-document (document)
-  (parse 'document document))
-
-;; TODO setf forms
-(defun value (value)
-  (car value))
-(defun value-type (value)
-  (cdr value))
-(defun property (property)
-  (car property))
-(defun property-value (property)
-  (value (cdr property)))
-(defun property-type (property)
-  (value-type (cdr property)))
-(defun node-name (node)
-  (first node))
-(defun node-properties (node)
-  (second node))
-(defun node-children (node)
-  (third node))
-(defun node-type (node)
-  (first (last node)))
-
-;; TODO if i use CLOS i can have one `read-document` generic with methods for
-;; streams, strings and files
-
-;; Unfortunately I can't stream the input because esrap doesn't support that
-;; TODO esrap-liquid might work?
-(defun read-document (&optional (stream *standard-input*))
-  "Read the kdl file on STREAM into lisp structures."
-  (from-string (alexandria:read-stream-content-into-string stream)))
-
-(defun from-string (string)
-  (parse-document string))
-
-(defun from-file (filespec)
-  (with-open-file (stream filespec)
-    (read-document stream)))
-
-(defparameter *indent* 0)
-
-(defun write-indent ()
-  (format t "~v@{~A~:*~}" (* *indent* 4) " "))
-
-(defun write-identifier (identifier)
-  (if (and (bare-identifier-p identifier)
-        (not (string-equal "" identifier)))
-    (write-string identifier)
-    (format t "~s" identifier)))
-
-(defun write-type (type)
-  (write-char #\()
-  (write-identifier type)
-  (write-char #\)))
-
-(defun write-value (value)
-  (typecase value
-    (keyword (format t "~a" (string-downcase (symbol-name value))))
-    (long-float (princ (substitute #\e #\d (format nil "~a" value))))
-    (null (format t "null"))
-    (number (format t "~a" value))
-    (string
-      (write-char #\")
-      (write-string (replace-escapes value))
-      (write-char #\"))
-    (t (format t "~s" value))))
-
-(defun replace-escapes (string)
-  (apply 'concatenate 'string
-    (loop for char across string
-      collect
-      (let ((replacement (getf (reverse *escape-map*) char)))
-        (if replacement
-          (if (char= replacement #\solidus)
-            (list #\solidus)
-            `(#\reverse_solidus ,replacement))
-          (list char))))))
-
-(defun write-property (property)
-  (let ((name (property property))
-         (value (property-value property))
-         (type (property-type property)))
-    (when (or name value)
-      (write-char #\space)
-      (when name
-        (write-identifier name)
-        (write-char #\=))
-      (when type
-        (write-type type))
-      (write-value value))))
-
-(defun write-children (children)
-  (write-string " {")
-  (loop for child in children do
-    (let ((*indent* (1+ *indent*)))
-      (write-node child)))
-  (write-char #\newline)
-  (write-indent)
-  (write-string "}"))
-
-(defun write-node (node)
-  (when node
-    (let ((name (node-name node))
-           (type (node-type node))
-           (properties (node-properties node))
-           (children (node-children node)))
-      (fresh-line)
-      (write-indent)
-      (when type (write-type type))
-      (write-identifier name)
-      (loop for property in properties do (write-property property))
-      (when (and children (not (every 'null children)))
-        (write-children children)))))
-
-(defun write-document (document &optional (stream *standard-output*))
-  "Write the kdl DOCUMENT to OUTPUT-STREAM."
-  (let ((*standard-output* stream))
-    (loop for node in document
-      do (write-node node))
-    (format t "~%")))
-
-(defun to-string (document)
-  (with-output-to-string (output)
-    (write-document document output)))
-
-(defun to-file (document filespec)
-  (with-open-file
-    (file-stream filespec
-      :direction :output
-      :if-exists :supersede)
-    (write-document document file-stream)))
-
-(defmethod io ((string string))
-  (to-string (from-string string)))
-
-(defmethod io ((file pathname))
-  (to-string (from-file file)))
