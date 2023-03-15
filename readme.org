@@ -18,23 +18,34 @@ These getters all have =setf= forms too.
 
 #+begin_src lisp
 (in-package :kdl-user)
-;; Get the value from a value cons
+
+;; Get the value from a value cons cell
 (value value)
-;; Get the type from a value cons
+
+;; Get the type from a value cons cell
 (value-type value)
+
 ;; Get the name of a property
 (property-name property)
+
 ;; Get the value from a property
 (property-value property)
+
 ;; Get the value-type from a property
 (property-type property)
+
 ;; Get the name of a node
 (node-name node)
+
 ;; Get the properties from a node
 (node-properties node)
+
 ;; Get the children from a node
 (node-children node)
-(node-child node 1) ; get child 1
+
+;; get the second child
+(node-child node 1)
+
 ;; Get the type of a node
 (node-type node)
 #+end_src
@@ -59,19 +70,19 @@ duplicated *will be preserved*.
 *** Really large numbers
 Very big floats max out at =*most-positive-double-float*=.
 For example:
-- Input :: ="chubby-number 1e1000"=
-- Output :: ="chubby-number 1.7976931348623157e308"=
+- Input :: =chubby-number 1e1000=
+- Output :: =chubby-number 1.7976931348623157e308=
 
 *** Exponent representation
 - Exponents use lowercase e
-  - official tests :: 1.1E-100
-  - :kdl/t :: 1.1e-100
+  - official tests :: ~1.1E-100~
+  - :kdl/t :: ~1.1e-100~
 - Positive exponents have no plus
-  - official tests ::  1.1E+100
-  - :kdl/t :: 1.1e100
+  - official tests ::  ~1.1E+100~
+  - :kdl/t :: ~1.1e100~
 - Non-integer numbers always have a decimal point:
-  - official tests :: 1E+100
-  - :kdl/t :: 1.0e100
+  - official tests :: ~1E+100~
+  - :kdl/t :: ~1.0e100~
 **** Lisp implementation differences
 
 The tests for the exponent formats are based on the output from SBCL. The
