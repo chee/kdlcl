@@ -1,4 +1,4 @@
-* cl-kdl
+* kdlcl
 
 [[https://kdl.dev/][KDL]] reader/writer for Common Lisp.
 
@@ -49,10 +49,12 @@ These getters all have =setf= forms too.
 #+end_src
 
 ** Quirks
-cl-kdl is spec-compliant, but the test-cases differ from the [[https://github.com/kdl-org/kdl/tree/main/tests/test_cases][official test-cases]] is a few ways:
+This implementation of KDL is spec-compliant, but the test-cases differ from the
+[[https://github.com/kdl-org/kdl/tree/main/tests/test_cases][official test-cases]] is a few ways:
 
 *** Properties
-Like [[https://github.com/kdl-org/kdl-rs][kdl-rs]], multiple properties with the same name are allowed and all duplicated *will be preserved*.
+Like [[https://github.com/kdl-org/kdl-rs][kdl-rs]], multiple properties with the same name are allowed and all
+duplicated *will be preserved*.
 
 *** Really large numbers
 Very big floats max out at =*most-positive-double-float*=.
@@ -72,9 +74,13 @@ For example:
   - :kdl/t :: 1.0e100
 **** Lisp implementation differences
 
-The tests for the exponent formats are based on the output from SBCL. The library works on at least GNU CLISP and ECL, but the floating point number output is in a different format. For instance, ECL prints the floats in this cute fashion: ~1.e10~.
+The tests for the exponent formats are based on the output from SBCL. The
+library works on at least GNU CLISP and ECL, but the floating point number
+output is in a different format. For instance, ECL prints the floats in this
+cute fashion: ~1.e10~.
 
-I haven't been able to test on any other implementations yet because I can't get them running on my computer :o(.
+I haven't been able to test on any other implementations yet because I can't get
+them running on my computer :o(.
 
 ** [[file:LICENSE][License]]
 
